@@ -19,7 +19,19 @@ export async function POST(req: Request) {
       );
     }
 
-    const body: MidtransNotification = await req.json();
+    // Handle empty body or test ping from Midtrans
+    let body: MidtransNotification;
+    try {
+      body = await req.json();
+    } catch {
+      // Midtrans test notification or empty body
+      return NextResponse.json({ success: true, message: 'OK' });
+    }
+
+    // Handle test notification (no order_id means it's a test)
+    if (!body || !body.order_id) {
+      return NextResponse.json({ success: true, message: 'Test notification received' });
+    }
 
     const {
       order_id,
