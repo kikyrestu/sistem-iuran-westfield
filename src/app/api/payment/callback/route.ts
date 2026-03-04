@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyNotificationSignature, mapMidtransStatus, type MidtransNotification } from '@/lib/midtrans';
+import { rateLimit, getClientIp } from '@/lib/rateLimit';
 
 /**
  * POST - Midtrans notification handler
@@ -9,6 +10,15 @@ import { verifyNotificationSignature, mapMidtransStatus, type MidtransNotificati
  */
 export async function POST(req: Request) {
   try {
+    // Rate limit: max 30 callbacks per minute per IP
+    const ip = getClientIp(req);
+    if (!rateLimit(ip, 30, 60000)) {
+      return NextResponse.json(
+        { success: false, message: 'Too many requests' },
+        { status: 429 }
+      );
+    }
+
     const body: MidtransNotification = await req.json();
 
     const {
@@ -19,10 +29,18 @@ export async function POST(req: Request) {
       gross_amount,
     } = body;
 
+    // Validate required fields
+    if (!order_id || !transaction_status || !gross_amount) {
+      return NextResponse.json(
+        { success: false, message: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
     // Verify notification signature
     const isValid = verifyNotificationSignature(body);
     if (!isValid) {
-      console.error('Invalid Midtrans notification signature');
+      console.error('Invalid Midtrans notification signature for order:', order_id);
       return NextResponse.json(
         { success: false, message: 'Invalid signature' },
         { status: 400 }
@@ -48,81 +66,108 @@ export async function POST(req: Request) {
     const mappedStatus = mapMidtransStatus(transaction_status, fraud_status);
 
     if (mappedStatus === 'PAID') {
-      // Update payment order
-      await prisma.paymentOrder.update({
-        where: { id: paymentOrder.id },
-        data: {
-          status: 'PAID',
-          paidAt: new Date(),
-          midtransId: transaction_id,
-        },
-      });
-
-      // Update contribution
-      await prisma.contribution.update({
-        where: { id: paymentOrder.contributionId },
-        data: {
-          status: 'PAID',
-          paidAt: new Date(),
-        },
-      });
-
-      // Update cash balance
-      const existingBalance = await prisma.cashBalance.findFirst();
-      if (existingBalance) {
-        await prisma.cashBalance.update({
-          where: { id: existingBalance.id },
-          data: {
-            balance: { increment: paymentOrder.amount },
-          },
-        });
-      } else {
-        await prisma.cashBalance.create({
-          data: {
-            balance: paymentOrder.amount,
-          },
-        });
+      // CRITICAL FIX: Idempotency check - prevent replay attacks / double crediting
+      if (paymentOrder.status === 'PAID') {
+        return NextResponse.json({ success: true, message: 'Already processed' });
       }
 
-      // Log activity
-      await prisma.activityLog.create({
-        data: {
-          action: 'PAYMENT_PAID',
-          performedBy: paymentOrder.userId,
-          details: JSON.stringify({
-            orderId: order_id,
-            transactionId: transaction_id,
-            amount: paymentOrder.amount,
-            grossAmount: gross_amount,
-          }),
-        },
+      // CRITICAL FIX: Cross-verify payment amount against database
+      const expectedAmount = paymentOrder.amount;
+      const receivedAmount = parseFloat(gross_amount);
+      if (receivedAmount !== expectedAmount) {
+        console.error(
+          `Amount mismatch for ${order_id}: expected ${expectedAmount}, received ${receivedAmount}`
+        );
+        return NextResponse.json(
+          { success: false, message: 'Amount mismatch' },
+          { status: 400 }
+        );
+      }
+
+      // MEDIUM FIX: Use database transaction for atomicity
+      await prisma.$transaction(async (tx) => {
+        // Update payment order
+        await tx.paymentOrder.update({
+          where: { id: paymentOrder.id },
+          data: {
+            status: 'PAID',
+            paidAt: new Date(),
+            midtransId: transaction_id,
+          },
+        });
+
+        // Update contribution
+        await tx.contribution.update({
+          where: { id: paymentOrder.contributionId },
+          data: {
+            status: 'PAID',
+            paidAt: new Date(),
+          },
+        });
+
+        // Update cash balance
+        const existingBalance = await tx.cashBalance.findFirst();
+        if (existingBalance) {
+          await tx.cashBalance.update({
+            where: { id: existingBalance.id },
+            data: {
+              balance: { increment: paymentOrder.amount },
+            },
+          });
+        } else {
+          await tx.cashBalance.create({
+            data: {
+              balance: paymentOrder.amount,
+            },
+          });
+        }
+
+        // Log activity
+        await tx.activityLog.create({
+          data: {
+            action: 'PAYMENT_PAID',
+            performedBy: paymentOrder.userId,
+            details: JSON.stringify({
+              orderId: order_id,
+              transactionId: transaction_id,
+              amount: paymentOrder.amount,
+              grossAmount: gross_amount,
+            }),
+          },
+        });
       });
     } else if (mappedStatus === 'EXPIRED') {
-      await prisma.paymentOrder.update({
-        where: { id: paymentOrder.id },
-        data: { status: 'EXPIRED', midtransId: transaction_id },
-      });
+      // Only update if not already in a final state
+      if (paymentOrder.status !== 'PAID') {
+        await prisma.paymentOrder.update({
+          where: { id: paymentOrder.id },
+          data: { status: 'EXPIRED', midtransId: transaction_id },
+        });
 
-      await prisma.contribution.update({
-        where: { id: paymentOrder.contributionId },
-        data: { status: 'EXPIRED' },
-      });
+        await prisma.contribution.update({
+          where: { id: paymentOrder.contributionId },
+          data: { status: 'EXPIRED' },
+        });
+      }
     } else if (mappedStatus === 'FAILED') {
-      await prisma.paymentOrder.update({
-        where: { id: paymentOrder.id },
-        data: { status: 'FAILED', midtransId: transaction_id },
-      });
+      // Only update if not already in a final state
+      if (paymentOrder.status !== 'PAID') {
+        await prisma.paymentOrder.update({
+          where: { id: paymentOrder.id },
+          data: { status: 'FAILED', midtransId: transaction_id },
+        });
 
-      await prisma.contribution.update({
-        where: { id: paymentOrder.contributionId },
-        data: { status: 'FAILED' },
-      });
+        await prisma.contribution.update({
+          where: { id: paymentOrder.contributionId },
+          data: { status: 'FAILED' },
+        });
+      }
     }
 
     // Midtrans expects 200 OK response
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Midtrans notification error:', error);
+    console.error('Midtrans notification error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }

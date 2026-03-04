@@ -49,7 +49,7 @@ export async function GET() {
       })),
     });
   } catch (error) {
-    console.error('Users GET error:', error);
+    console.error('Users GET error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
@@ -80,9 +80,42 @@ export async function POST(req: Request) {
       );
     }
 
-    if (password.length < 6) {
+    // Input length limits (prevent DoS via bcrypt with huge passwords)
+    if (
+      typeof name !== 'string' || name.length > 100 ||
+      typeof email !== 'string' || email.length > 255 ||
+      typeof password !== 'string' || password.length > 72 ||
+      typeof sampName !== 'string' || sampName.length > 50
+    ) {
       return NextResponse.json(
-        { success: false, message: 'Password minimal 6 karakter' },
+        { success: false, message: 'Input melebihi batas karakter yang diizinkan' },
+        { status: 400 }
+      );
+    }
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { success: false, message: 'Format email tidak valid' },
+        { status: 400 }
+      );
+    }
+
+    // Password strength policy
+    if (password.length < 8) {
+      return NextResponse.json(
+        { success: false, message: 'Password minimal 8 karakter' },
+        { status: 400 }
+      );
+    }
+
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    if (!hasUpperCase || !hasLowerCase || !hasNumber) {
+      return NextResponse.json(
+        { success: false, message: 'Password harus mengandung huruf besar, huruf kecil, dan angka' },
         { status: 400 }
       );
     }
@@ -139,7 +172,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Users POST error:', error);
+    console.error('Users POST error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
@@ -194,7 +227,7 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Users PATCH error:', error);
+    console.error('Users PATCH error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
@@ -247,7 +280,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Users DELETE error:', error);
+    console.error('Users DELETE error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }

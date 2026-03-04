@@ -18,8 +18,24 @@ export async function GET(req: Request) {
 
     // Report mode
     if (type === 'report' && monthParam && yearParam) {
+      // Only admins can view financial reports
+      if (session.user.role !== 'ADMIN') {
+        return NextResponse.json(
+          { success: false, message: 'Admin access required untuk melihat laporan' },
+          { status: 403 }
+        );
+      }
+
       const month = parseInt(monthParam);
       const year = parseInt(yearParam);
+
+      // Validate month/year params
+      if (isNaN(month) || month < 1 || month > 12 || isNaN(year) || year < 2020 || year > 2100) {
+        return NextResponse.json(
+          { success: false, message: 'Month dan year tidak valid' },
+          { status: 400 }
+        );
+      }
 
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0, 23, 59, 59);
@@ -188,7 +204,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Dashboard API error:', error);
+    console.error('Dashboard API error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }

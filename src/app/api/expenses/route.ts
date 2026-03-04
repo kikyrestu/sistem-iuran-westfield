@@ -36,7 +36,7 @@ export async function GET() {
       })),
     });
   } catch (error) {
-    console.error('Expenses GET error:', error);
+    console.error('Expenses GET error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
@@ -68,9 +68,27 @@ export async function POST(req: Request) {
       );
     }
 
-    if (amount < 1000) {
+    // Type and range validation
+    if (typeof amount !== 'number' || !Number.isInteger(amount) || amount < 1000 || amount > 100000000) {
       return NextResponse.json(
-        { success: false, message: 'Jumlah minimal Rp 1.000' },
+        { success: false, message: 'Jumlah harus angka bulat antara Rp 1.000 - Rp 100.000.000' },
+        { status: 400 }
+      );
+    }
+
+    // Category validation
+    const validCategories = ['hosting', 'domain', 'script', 'ads', 'maintenance', 'other'];
+    if (typeof category !== 'string' || !validCategories.includes(category)) {
+      return NextResponse.json(
+        { success: false, message: 'Kategori tidak valid' },
+        { status: 400 }
+      );
+    }
+
+    // Description length limit
+    if (typeof description !== 'string' || description.trim().length === 0 || description.length > 500) {
+      return NextResponse.json(
+        { success: false, message: 'Deskripsi wajib diisi (maksimal 500 karakter)' },
         { status: 400 }
       );
     }
@@ -120,7 +138,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Expenses POST error:', error);
+    console.error('Expenses POST error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
@@ -185,7 +203,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Expenses DELETE error:', error);
+    console.error('Expenses DELETE error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }

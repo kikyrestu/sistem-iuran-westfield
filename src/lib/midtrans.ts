@@ -3,6 +3,13 @@ import crypto from 'crypto';
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || '';
 const MIDTRANS_IS_PRODUCTION = process.env.MIDTRANS_IS_PRODUCTION === 'true';
 
+// Startup validation
+if (typeof window === 'undefined') {
+  if (!MIDTRANS_SERVER_KEY) {
+    console.warn('⚠️  MIDTRANS_SERVER_KEY is not set!');
+  }
+}
+
 const BASE_URL = MIDTRANS_IS_PRODUCTION
   ? 'https://api.midtrans.com/v2'
   : 'https://api.sandbox.midtrans.com/v2';
@@ -115,7 +122,10 @@ export async function createQrisTransaction(
  * Cek status transaksi di Midtrans
  */
 export async function getTransactionStatus(orderId: string) {
-  const response = await fetch(`${BASE_URL}/${orderId}/status`, {
+  if (!/^[A-Za-z0-9_-]+$/.test(orderId)) {
+    throw new Error('Invalid order ID format');
+  }
+  const response = await fetch(`${BASE_URL}/${encodeURIComponent(orderId)}/status`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
@@ -131,7 +141,10 @@ export async function getTransactionStatus(orderId: string) {
  * Cancel transaksi di Midtrans
  */
 export async function cancelTransaction(orderId: string) {
-  const response = await fetch(`${BASE_URL}/${orderId}/cancel`, {
+  if (!/^[A-Za-z0-9_-]+$/.test(orderId)) {
+    throw new Error('Invalid order ID format');
+  }
+  const response = await fetch(`${BASE_URL}/${encodeURIComponent(orderId)}/cancel`, {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
@@ -149,12 +162,25 @@ export async function cancelTransaction(orderId: string) {
  */
 export function verifyNotificationSignature(notification: MidtransNotification): boolean {
   const { order_id, status_code, gross_amount, signature_key } = notification;
+  
+  if (!order_id || !status_code || !gross_amount || !signature_key) {
+    return false;
+  }
+
   const expectedSignature = crypto
     .createHash('sha512')
     .update(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)
     .digest('hex');
 
-  return expectedSignature === signature_key;
+  // Timing-safe comparison to prevent timing attacks
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, 'hex'),
+      Buffer.from(signature_key, 'hex')
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

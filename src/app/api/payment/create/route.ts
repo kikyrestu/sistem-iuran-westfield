@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { createQrisTransaction, getQrUrl, generateOrderId } from '@/lib/midtrans';
+import { rateLimit, getClientIp } from '@/lib/rateLimit';
 
 /**
  * GET - Check existing payment for current week
@@ -74,7 +75,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ success: true, data: null });
   } catch (error) {
-    console.error('Payment GET error:', error);
+    console.error('Payment GET error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
@@ -87,6 +88,15 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
+    // Rate limit: max 5 payment creations per minute per IP
+    const ip = getClientIp(req);
+    if (!rateLimit(ip, 5, 60000)) {
+      return NextResponse.json(
+        { success: false, message: 'Terlalu banyak request. Coba lagi nanti.' },
+        { status: 429 }
+      );
+    }
+
     const session = await getServerSession(authOptions);
     if (!session) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -95,10 +105,24 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { amount, weekNumber, year } = body;
 
-    // Validate amount
-    if (!amount || amount < 5000 || amount > 10000) {
+    // Validate amount (type + range)
+    if (!amount || typeof amount !== 'number' || !Number.isInteger(amount) || amount < 5000 || amount > 10000) {
       return NextResponse.json(
         { success: false, message: 'Nominal harus antara Rp 5.000 - Rp 10.000' },
+        { status: 400 }
+      );
+    }
+
+    // Validate weekNumber and year
+    const currentYear = new Date().getFullYear();
+    if (
+      !weekNumber || typeof weekNumber !== 'number' || !Number.isInteger(weekNumber) ||
+      weekNumber < 1 || weekNumber > 53 ||
+      !year || typeof year !== 'number' || !Number.isInteger(year) ||
+      year < currentYear - 1 || year > currentYear + 1
+    ) {
+      return NextResponse.json(
+        { success: false, message: 'Week dan year tidak valid' },
         { status: 400 }
       );
     }
@@ -211,7 +235,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Payment POST error:', error);
+    console.error('Payment POST error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Gagal membuat pembayaran. Coba lagi.' },
       { status: 500 }

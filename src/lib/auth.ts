@@ -3,6 +3,11 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import prisma from './prisma';
 
+// Startup validation for critical env vars
+if (typeof window === 'undefined' && !process.env.NEXTAUTH_SECRET) {
+  console.error('FATAL: NEXTAUTH_SECRET environment variable is not set!');
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({

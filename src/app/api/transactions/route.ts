@@ -39,7 +39,7 @@ export async function GET() {
       })),
     });
   } catch (error) {
-    console.error('Transactions API error:', error);
+    console.error('Transactions API error:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
