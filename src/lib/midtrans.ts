@@ -5,11 +5,11 @@ import crypto from 'crypto';
  * This is critical for Vercel serverless functions
  */
 function getServerKey(): string {
-  return process.env.MIDTRANS_SERVER_KEY || '';
+  return (process.env.MIDTRANS_SERVER_KEY || '').trim();
 }
 
 function isProduction(): boolean {
-  return process.env.MIDTRANS_IS_PRODUCTION === 'true';
+  return (process.env.MIDTRANS_IS_PRODUCTION || '').trim() === 'true';
 }
 
 function getBaseUrl(): string {
@@ -103,7 +103,11 @@ export async function createQrisTransaction(
     },
   };
 
-  const response = await fetch(`${getBaseUrl()}/charge`, {
+  const baseUrl = getBaseUrl();
+  const serverKey = getServerKey();
+  console.log(`Midtrans config: production=${isProduction()}, url=${baseUrl}, keyPrefix=${serverKey.substring(0, 10)}...`);
+
+  const response = await fetch(`${baseUrl}/charge`, {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
