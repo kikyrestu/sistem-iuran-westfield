@@ -4,6 +4,13 @@ import { verifyNotificationSignature, mapMidtransStatus, type MidtransNotificati
 import { rateLimit, getClientIp } from '@/lib/rateLimit';
 
 /**
+ * GET - Health check for Midtrans notification URL test
+ */
+export async function GET() {
+  return NextResponse.json({ success: true, message: 'Midtrans notification endpoint is active' });
+}
+
+/**
  * POST - Midtrans notification handler
  * Dipanggil oleh Midtrans setelah ada perubahan status transaksi
  * Set URL ini di Midtrans Dashboard > Settings > Configuration > Notification URL
