@@ -1,24 +1,28 @@
 import crypto from 'crypto';
 
-const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || '';
-const MIDTRANS_IS_PRODUCTION = process.env.MIDTRANS_IS_PRODUCTION === 'true';
-
-// Startup validation
-if (typeof window === 'undefined') {
-  if (!MIDTRANS_SERVER_KEY) {
-    console.warn('⚠️  MIDTRANS_SERVER_KEY is not set!');
-  }
+/**
+ * Read env vars at runtime (not module init time)
+ * This is critical for Vercel serverless functions
+ */
+function getServerKey(): string {
+  return process.env.MIDTRANS_SERVER_KEY || '';
 }
 
-const BASE_URL = MIDTRANS_IS_PRODUCTION
-  ? 'https://api.midtrans.com/v2'
-  : 'https://api.sandbox.midtrans.com/v2';
+function isProduction(): boolean {
+  return process.env.MIDTRANS_IS_PRODUCTION === 'true';
+}
+
+function getBaseUrl(): string {
+  return isProduction()
+    ? 'https://api.midtrans.com/v2'
+    : 'https://api.sandbox.midtrans.com/v2';
+}
 
 /**
  * Generate Basic Auth header dari Server Key
  */
 function getAuthHeader(): string {
-  const encoded = Buffer.from(`${MIDTRANS_SERVER_KEY}:`).toString('base64');
+  const encoded = Buffer.from(`${getServerKey()}:`).toString('base64');
   return `Basic ${encoded}`;
 }
 
@@ -99,7 +103,7 @@ export async function createQrisTransaction(
     },
   };
 
-  const response = await fetch(`${BASE_URL}/charge`, {
+  const response = await fetch(`${getBaseUrl()}/charge`, {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
@@ -112,6 +116,7 @@ export async function createQrisTransaction(
   const data: MidtransChargeResponse = await response.json();
 
   if (data.status_code !== '201') {
+    console.error('Midtrans charge failed:', JSON.stringify(data));
     throw new Error(data.status_message || 'Gagal membuat transaksi Midtrans');
   }
 
@@ -125,7 +130,7 @@ export async function getTransactionStatus(orderId: string) {
   if (!/^[A-Za-z0-9_-]+$/.test(orderId)) {
     throw new Error('Invalid order ID format');
   }
-  const response = await fetch(`${BASE_URL}/${encodeURIComponent(orderId)}/status`, {
+  const response = await fetch(`${getBaseUrl()}/${encodeURIComponent(orderId)}/status`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
@@ -144,7 +149,7 @@ export async function cancelTransaction(orderId: string) {
   if (!/^[A-Za-z0-9_-]+$/.test(orderId)) {
     throw new Error('Invalid order ID format');
   }
-  const response = await fetch(`${BASE_URL}/${encodeURIComponent(orderId)}/cancel`, {
+  const response = await fetch(`${getBaseUrl()}/${encodeURIComponent(orderId)}/cancel`, {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
@@ -169,7 +174,7 @@ export function verifyNotificationSignature(notification: MidtransNotification):
 
   const expectedSignature = crypto
     .createHash('sha512')
-    .update(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)
+    .update(order_id + status_code + gross_amount + getServerKey())
     .digest('hex');
 
   // Timing-safe comparison to prevent timing attacks

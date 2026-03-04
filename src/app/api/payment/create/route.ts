@@ -235,9 +235,10 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Payment POST error:', error instanceof Error ? error.message : 'Unknown error');
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Payment POST error:', errorMsg);
     return NextResponse.json(
-      { success: false, message: 'Gagal membuat pembayaran. Coba lagi.' },
+      { success: false, message: `Gagal membuat pembayaran: ${errorMsg}` },
       { status: 500 }
     );
   }
