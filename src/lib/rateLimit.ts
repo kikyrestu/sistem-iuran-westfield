@@ -9,11 +9,11 @@ const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
 // Bersihkan entries lama setiap 5 menit
 setInterval(() => {
   const now = Date.now();
-  for (const [key, value] of rateLimitMap.entries()) {
+  rateLimitMap.forEach((value, key) => {
     if (now - value.lastReset > 300000) {
       rateLimitMap.delete(key);
     }
-  }
+  });
 }, 300000);
 
 /**
