@@ -105,7 +105,21 @@ export async function createQrisTransaction(
 
   const baseUrl = getBaseUrl();
   const serverKey = getServerKey();
-  console.log(`Midtrans config: production=${isProduction()}, url=${baseUrl}, keyPrefix=${serverKey.substring(0, 10)}...`);
+  const isProd = isProduction();
+  
+  console.log('=== MIDTRANS DEBUG START ===');
+  console.log('Environment:', {
+    isProduction: isProd,
+    baseUrl,
+    serverKeyPrefix: serverKey.substring(0, 15),
+    serverKeyLength: serverKey.length,
+    serverKeyRaw: JSON.stringify(process.env.MIDTRANS_SERVER_KEY?.substring(0, 15)),
+    isProductionRaw: JSON.stringify(process.env.MIDTRANS_IS_PRODUCTION),
+    clientKey: (process.env.MIDTRANS_CLIENT_KEY || '').substring(0, 15),
+  });
+  console.log('Request payload:', JSON.stringify(payload, null, 2));
+  console.log('Request URL:', `${baseUrl}/charge`);
+  console.log('=== MIDTRANS DEBUG END ===');
 
   const response = await fetch(`${baseUrl}/charge`, {
     method: 'POST',
@@ -117,13 +131,29 @@ export async function createQrisTransaction(
     body: JSON.stringify(payload),
   });
 
-  const data: MidtransChargeResponse = await response.json();
+  const responseText = await response.text();
+  console.log('=== MIDTRANS RESPONSE DEBUG ===');
+  console.log('HTTP Status:', response.status);
+  console.log('Response body:', responseText);
+  console.log('=== MIDTRANS RESPONSE DEBUG END ===');
 
-  if (data.status_code !== '201') {
-    console.error('Midtrans charge failed:', JSON.stringify(data));
-    throw new Error(data.status_message || 'Gagal membuat transaksi Midtrans');
+  let data: MidtransChargeResponse;
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    throw new Error(`Midtrans returned invalid JSON: ${responseText.substring(0, 200)}`);
   }
 
+  if (data.status_code !== '201') {
+    console.error('Midtrans charge FAILED:', {
+      status_code: data.status_code,
+      status_message: data.status_message,
+      fullResponse: responseText.substring(0, 500),
+    });
+    throw new Error(`Midtrans error [${data.status_code}]: ${data.status_message || 'Unknown error'}`);
+  }
+
+  console.log('Midtrans charge SUCCESS:', data.transaction_id);
   return data;
 }
 

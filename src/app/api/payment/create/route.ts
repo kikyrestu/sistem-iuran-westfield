@@ -236,7 +236,11 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Payment POST error:', errorMsg);
+    const errorStack = error instanceof Error ? error.stack : '';
+    console.error('=== PAYMENT CREATE ERROR ===');
+    console.error('Error message:', errorMsg);
+    console.error('Error stack:', errorStack);
+    console.error('=== PAYMENT CREATE ERROR END ===');
     return NextResponse.json(
       { success: false, message: `Gagal membuat pembayaran: ${errorMsg}` },
       { status: 500 }
