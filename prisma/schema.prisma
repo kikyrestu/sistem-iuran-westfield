@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  FAILED
+  EXPIRED
+  REFUND
+}
+
+model User {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  password      String
+  sampName      String          @map("samp_name") // Nama in-game GTA SAMP
+  role          Role            @default(STAFF)
+  isActive      Boolean         @default(true) @map("is_active")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  contributions Contribution[]
+  expenses      Expense[]
+  paymentOrders PaymentOrder[]
+
+  @@map("users")
+}
+
+model Contribution {
+  id            String          @id @default(cuid())
+  userId        String          @map("user_id")
+  amount        Int             // Jumlah iuran (5000 - 10000)
+  weekNumber    Int             @map("week_number") // Minggu ke berapa dalam tahun
+  year          Int             // Tahun
+  status        PaymentStatus   @default(UNPAID)
+  paidAt        DateTime?       @map("paid_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentOrder  PaymentOrder?
+
+  @@unique([userId, weekNumber, year])
+  @@map("contributions")
+}
+
+model Expense {
+  id            String          @id @default(cuid())
+  adminId       String          @map("admin_id")
+  amount        Int             // Jumlah pengeluaran
+  category      String          // Kategori: hosting, domain, script, dll
+  description   String          // Deskripsi pengeluaran
+  receiptUrl    String?         @map("receipt_url") // Bukti pengeluaran (opsional)
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  admin         User            @relation(fields: [adminId], references: [id])
+
+  @@map("expenses")
+}
+
+model PaymentOrder {
+  id              String          @id @default(cuid())
+  contributionId  String          @unique @map("contribution_id")
+  userId          String          @map("user_id")
+  merchantRef     String          @unique @map("merchant_ref")
+  midtransId      String?         @map("midtrans_id") // transaction_id dari Midtrans
+  amount          Int
+  fee             Int             @default(0) // Fee dari payment gateway
+  totalAmount     Int             @map("total_amount") // amount + fee
+  paymentMethod   String          @default("QRIS") @map("payment_method")
+  status          PaymentStatus   @default(UNPAID)
+  qrUrl           String?         @map("qr_url")
+  qrString        String?         @map("qr_string")
+  expiredAt       DateTime?       @map("expired_at")
+  paidAt          DateTime?       @map("paid_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  contribution    Contribution    @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+  user            User            @relation(fields: [userId], references: [id])
+
+  @@map("payment_orders")
+}
+
+model CashBalance {
+  id            String          @id @default(cuid())
+  balance       Int             @default(0) // Saldo kas saat ini
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  @@map("cash_balance")
+}
+
+model ActivityLog {
+  id            String          @id @default(cuid())
+  action        String          // Deskripsi aksi
+  performedBy   String          @map("performed_by") // User ID yang melakukan
+  details       String?         // Detail tambahan (JSON string)
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  @@map("activity_logs")
+}
