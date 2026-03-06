@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { formatRupiah, formatDateTime, getStatusColor, getStatusLabel, getWeekNumber } from '@/lib/utils';
-import { HiOutlineSearch, HiOutlineFilter } from 'react-icons/hi';
+import toast from 'react-hot-toast';
+import { formatRupiah, formatDateTime, getStatusColor, getStatusLabel } from '@/lib/utils';
+import { HiOutlineSearch, HiOutlineFilter, HiOutlineCheckCircle } from 'react-icons/hi';
 
 interface ContributionRecord {
   id: string;
@@ -12,6 +13,8 @@ interface ContributionRecord {
   year: number;
   status: string;
   paidAt: string | null;
+  confirmerName: string | null;
+  proofNote: string | null;
   createdAt: string;
   user: {
     name: string;
@@ -25,6 +28,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'PAID' | 'UNPAID' | 'EXPIRED'>('all');
   const [search, setSearch] = useState('');
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const isAdmin = session?.user?.role === 'ADMIN';
 
@@ -43,6 +47,33 @@ export default function TransactionsPage() {
       console.error('Failed to fetch transactions:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirm = async (contributionId: string) => {
+    if (!isAdmin) return;
+
+    setConfirmingId(contributionId);
+    try {
+      const res = await fetch('/api/contributions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contributionId }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        toast.success('Pembayaran berhasil dikonfirmasi!');
+        // Refresh data
+        fetchTransactions();
+      } else {
+        toast.error(data.message || 'Gagal mengkonfirmasi');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan');
+    } finally {
+      setConfirmingId(null);
     }
   };
 
@@ -108,12 +139,11 @@ export default function TransactionsPage() {
           ].map((f) => (
             <button
               key={f.value}
-              onClick={() => setFilter(f.value as any)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                filter === f.value
+              onClick={() => setFilter(f.value as 'all' | 'PAID' | 'UNPAID' | 'EXPIRED')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${filter === f.value
                   ? 'bg-white text-dark-900 shadow-sm'
                   : 'text-dark-500 hover:text-dark-700'
-              }`}
+                }`}
             >
               {f.label}
             </button>
@@ -140,7 +170,7 @@ export default function TransactionsPage() {
                   Status
                 </th>
                 <th className="text-right text-xs font-medium text-dark-500 uppercase tracking-wider px-6 py-3">
-                  Tanggal Bayar
+                  {isAdmin ? 'Aksi' : 'Tanggal Bayar'}
                 </th>
               </tr>
             </thead>
@@ -179,9 +209,34 @@ export default function TransactionsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-3 text-right">
-                      <span className="text-xs text-dark-400">
-                        {c.paidAt ? formatDateTime(c.paidAt) : '-'}
-                      </span>
+                      {isAdmin && c.status === 'UNPAID' ? (
+                        <button
+                          onClick={() => handleConfirm(c.id)}
+                          disabled={confirmingId === c.id}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                        >
+                          {confirmingId === c.id ? (
+                            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          ) : (
+                            <HiOutlineCheckCircle className="w-3.5 h-3.5" />
+                          )}
+                          Konfirmasi
+                        </button>
+                      ) : (
+                        <div>
+                          <span className="text-xs text-dark-400">
+                            {c.paidAt ? formatDateTime(c.paidAt) : '-'}
+                          </span>
+                          {c.confirmerName && (
+                            <p className="text-xs text-dark-300">
+                              oleh {c.confirmerName}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))

@@ -57,6 +57,9 @@ export interface ContributionWithUser {
   year: number;
   status: string;
   paidAt: string | null;
+  confirmedBy: string | null;
+  confirmerName: string | null;
+  proofNote: string | null;
   createdAt: string;
   user: {
     id: string;
@@ -78,20 +81,4 @@ export interface ExpenseWithAdmin {
     name: string;
     sampName: string;
   };
-}
-
-export interface PaymentOrderDetail {
-  id: string;
-  merchantRef: string;
-  midtransId: string | null;
-  amount: number;
-  fee: number;
-  totalAmount: number;
-  paymentMethod: string;
-  status: string;
-  qrUrl: string | null;
-  qrString: string | null;
-  expiredAt: string | null;
-  paidAt: string | null;
-  createdAt: string;
 }

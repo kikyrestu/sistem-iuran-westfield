@@ -18,6 +18,9 @@ export async function GET() {
         user: {
           select: { name: true, sampName: true },
         },
+        confirmer: {
+          select: { name: true, sampName: true },
+        },
       },
       orderBy: [{ year: 'desc' }, { weekNumber: 'desc' }],
     });
@@ -31,6 +34,8 @@ export async function GET() {
         year: c.year,
         status: c.status,
         paidAt: c.paidAt?.toISOString() || null,
+        confirmerName: c.confirmer?.sampName || null,
+        proofNote: c.proofNote,
         createdAt: c.createdAt.toISOString(),
         user: {
           name: c.user.name,
